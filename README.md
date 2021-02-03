@@ -66,5 +66,7 @@ PGP also reveals senders and recipients. While this is normal and expected for P
 DSNP uses a number of key pairs per identity. Key pairs are also allocated per relationship, and per broadcast group. Doing this allows us to deny signatures by revealing private keys. While the RSA algorithm gives us strong assurances about who published what, we must be careful to protect ourselves against these proofs being used against us.
 
 http://lists.gnupg.org/pipermail/gnupg-users/2007-December/032268.html.
+
 Author
+
 Adrian Thurston is responsible for this.
