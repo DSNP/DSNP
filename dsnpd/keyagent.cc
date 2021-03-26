@@ -182,7 +182,7 @@ void KeyThread::create()
 void KeyThread::dbConnect()
 {
 	/* Connect to the database. */
-	mysql = ConfigCtx::dbConnect( c->main->CFG_KEYS_HOST, c->main->CFG_KEYS_DATABASE, 
+	mysql = ConfigCtx::dbConnect( c->main->CFG_KEYS_HOST, c->main->CFG_KEYS_DATABASE,
 			c->main->CFG_KEYS_USER, c->main->CFG_KEYS_PASS );
 	if ( mysql == 0 )
 		throw DatabaseConnectionFailed();
@@ -398,8 +398,7 @@ void KeyAgent::storePublicKey( Identity &identity,
 Keys *makeKeys( const String &n, const String e )
 {
 	RSA *rsa = RSA_new();
-	rsa->n = binToBn( n );
-	rsa->e = binToBn( e );
+	RSA_set0_key(rsa, binToBn( n ), binToBn( e ), NULL);
 	Keys *keys = new Keys;
 	keys->rsa = rsa;
 	return keys;
@@ -466,14 +465,14 @@ Keys *KeyThread::generateKey( long long userId, PrivateKey &key, int keyPriv,
 		throw RsaKeyGenError( ERR_get_error() );
 
 	/* Extract the components to hex strings. */
-	key.n = bnToBin( rsa->n );
-	key.e = bnToBin( rsa->e );
-	key.d = bnToBin( rsa->d );
-	key.p = bnToBin( rsa->p );
-	key.q = bnToBin( rsa->q );
-	key.dmp1 = bnToBin( rsa->dmp1 );
-	key.dmq1 = bnToBin( rsa->dmq1 );
-	key.iqmp = bnToBin( rsa->iqmp );
+	key.n = bnToBin( RSA_get0_n(rsa) );
+	key.e = bnToBin( RSA_get0_e(rsa) );
+	key.d = bnToBin( RSA_get0_d(rsa) );
+	key.p = bnToBin( RSA_get0_p(rsa) );
+	key.q = bnToBin( RSA_get0_q(rsa) );
+	key.dmp1 = bnToBin( RSA_get0_dmp1(rsa) );
+	key.dmq1 = bnToBin( RSA_get0_dmq1(rsa) );
+	key.iqmp = bnToBin( RSA_get0_iqmp(rsa) );
 	Keys *keys = new Keys;
 	keys->rsa = rsa;
 
@@ -481,7 +480,7 @@ Keys *KeyThread::generateKey( long long userId, PrivateKey &key, int keyPriv,
 	String prot;
 	if ( encrypt )
 		prot = pwEncrypt( pass, priv );
-	else 
+	else
 		prot = Pointer( priv(), priv.length );
 
 	DbQuery( mysql,
@@ -489,7 +488,7 @@ Keys *KeyThread::generateKey( long long userId, PrivateKey &key, int keyPriv,
 			"	( user_id, key_priv, encrypted, key_data ) "
 			"VALUES ( %L, %l, %b, %d ); ",
 			userId, keyPriv, encrypt, prot.binary(), prot.length );
-	
+
 	return keys;
 }
 
@@ -515,7 +514,7 @@ void KeyThread::recvGenerateKey()
 			"INSERT IGNORE INTO password ( user_id, pass_salt, pass ) "
 			"VALUES ( %L, %e, %e ) ",
 			userId, passSaltStr.data, passHashed.data );
-	
+
 	/*
 	 * The Keys
 	 */
@@ -535,7 +534,7 @@ void KeyThread::recvGenerateKey()
 	String priv2Str = consPublicKey( priv2 );
 	String priv3Str = consPublicKey( priv3 );
 
-	String publicKeySet = consPublicKeySet( 
+	String publicKeySet = consPublicKeySet(
 			priv0Str, priv1Str, priv2Str, priv3Str );
 
 	String signedPublicKeySet = sign( priv0Keys, publicKeySet );
@@ -546,7 +545,7 @@ void KeyThread::recvGenerateKey()
 			"VALUES ( %L, %d ); ",
 			userId, signedPublicKeySet.binary(),
 			signedPublicKeySet.length );
-	
+
 	delete priv0Keys;
 	delete priv1Keys;
 	delete priv2Keys;
@@ -561,8 +560,7 @@ Keys *parsePubKey( const String &pubKey )
 	PacketPublicKey epp( pubKey );
 
 	RSA *rsa = RSA_new();
-	rsa->n = binToBn( epp.n );
-	rsa->e = binToBn( epp.e );
+	RSA_set0_key(rsa, binToBn( epp.n ), binToBn( epp.e ), NULL);
 
 	Keys *keys = new Keys;
 	keys->rsa = rsa;
@@ -572,7 +570,7 @@ Keys *parsePubKey( const String &pubKey )
 
 Keys *KeyThread::loadKeyPub( long long identityId )
 {
-	DbQuery keysQuery( mysql, 
+	DbQuery keysQuery( mysql,
 		"SELECT key_data "
 		"FROM public_key "
 		"WHERE identity_id = %L AND key_priv = %l",
@@ -601,14 +599,10 @@ Keys *parsePrivKey( const String &priv )
 	PacketPrivateKey epp( priv );
 
 	RSA *rsa = RSA_new();
-	rsa->n =    binToBn( epp.key.n );
-	rsa->e =    binToBn( epp.key.e );
-	rsa->d =    binToBn( epp.key.d );
-	rsa->p =    binToBn( epp.key.p );
-	rsa->q =    binToBn( epp.key.q );
-	rsa->dmp1 = binToBn( epp.key.dmp1 );
-	rsa->dmq1 = binToBn( epp.key.dmq1 );
-	rsa->iqmp = binToBn( epp.key.iqmp );
+
+	RSA_set0_key(rsa, binToBn( epp.key.n), binToBn( epp.key.e), binToBn( epp.key.d));
+	RSA_set0_factors(rsa, binToBn( epp.key.p ), binToBn( epp.key.q ) );
+	RSA_set0_crt_params(rsa, binToBn( epp.key.dmp1 ), binToBn( epp.key.dmq1 ), binToBn( epp.key.iqmp ) );
 
 	Keys *keys = new Keys;
 	keys->rsa = rsa;
@@ -675,7 +669,7 @@ void KeyThread::recvSignEncrypt()
 }
 
 Allocated KeyAgent::signIdEncrypt( Identity &pubEncVer, User &privDecSign,
-		const String &iduri, long long bkId, const String &distName, 
+		const String &iduri, long long bkId, const String &distName,
 		long long generation )
 {
 	command( KA_SIGN_ID_ENCRYPT );
@@ -841,7 +835,7 @@ void KeyThread::recvBkSign()
 
 	Keys *privDecSign = loadKeyPriv( privDecSignId );
 
-	String encPacket = bkSign( privDecSign, bk, msg ); 
+	String encPacket = bkSign( privDecSign, bk, msg );
 	writeData( encPacket );
 }
 
@@ -916,7 +910,7 @@ void KeyThread::recvBkSignEncrypt()
 
 	Keys *privDecSign = loadKeyPriv( privDecSignId );
 
-	String encPacket = bkSignEncrypt( privDecSign, bk, msg ); 
+	String encPacket = bkSignEncrypt( privDecSign, bk, msg );
 	writeData( encPacket );
 }
 
@@ -986,7 +980,7 @@ void KeyThread::recvBkEncrypt()
 	MYSQL_ROW row = findBk.fetchRow();
 	String bk = Pointer( row[0] );
 
-	String encPacket = bkEncrypt( bk, msg ); 
+	String encPacket = bkEncrypt( bk, msg );
 	writeData( encPacket );
 }
 
@@ -1058,7 +1052,7 @@ void KeyThread::recvBkForeignSign()
 
 	Keys *privDecSign = loadKeyPriv( privDecSignId );
 
-	String encPacket = bkSign( privDecSign, bk, msg ); 
+	String encPacket = bkSign( privDecSign, bk, msg );
 	writeData( encPacket );
 }
 
@@ -1102,7 +1096,7 @@ void KeyAgent::publicKey( User &user )
 {
 	command( KA_GET_PUBLIC_KEY );
 	writeLongLong( user.id() );
-	
+
 	readData( pubSet );
 }
 
@@ -1154,14 +1148,14 @@ void KeyThread::recvStorePutBroadcastKey()
 
 	/* FIXME: Hack here! Extract the components to hex strings. */
 	PrivateKey key;
-	key.n = bnToBin( rsa->n );
-	key.e = bnToBin( rsa->e );
-	key.d = bnToBin( rsa->d );
-	key.p = bnToBin( rsa->p );
-	key.q = bnToBin( rsa->q );
-	key.dmp1 = bnToBin( rsa->dmp1 );
-	key.dmq1 = bnToBin( rsa->dmq1 );
-	key.iqmp = bnToBin( rsa->iqmp );
+	key.n = bnToBin( RSA_get0_n(rsa) );
+	key.e = bnToBin( RSA_get0_e(rsa) );
+	key.d = bnToBin( RSA_get0_d(rsa) );
+	key.p = bnToBin( RSA_get0_p(rsa) );
+	key.q = bnToBin( RSA_get0_q(rsa) );
+	key.dmp1 = bnToBin( RSA_get0_dmp1(rsa) );
+	key.dmq1 = bnToBin( RSA_get0_dmq1(rsa) );
+	key.iqmp = bnToBin( RSA_get0_iqmp(rsa) );
 
 	String priv = consPrivateKey( key );
 	String pub = consPublicKey( key );
@@ -1170,7 +1164,7 @@ void KeyThread::recvStorePutBroadcastKey()
 		"INSERT IGNORE INTO put_broadcast_key "
 		"( id, broadcast_key, priv_key, pub_key ) "
 		"VALUES ( %L, %e, %d, %d ) ",
-		id, broadcastKey(), 
+		id, broadcastKey(),
 		priv.binary(), priv.length,
 		pub.binary(), pub.length );
 
@@ -1200,9 +1194,9 @@ void KeyThread::recvStoreGetBroadcastKey()
 		"INSERT IGNORE INTO get_broadcast_key "
 		"( id, broadcast_key, pub_key, member_proof ) "
 		"VALUES ( %L, %e, %d, %d ) ",
-		id, epp.bk(), 
+		id, epp.bk(),
 		epp.pubKey.binary(), epp.pubKey.length,
-		epp.memberProof.binary(), epp.memberProof.length 
+		epp.memberProof.binary(), epp.memberProof.length
 		);
 
 	/* Nothing to return, but we need to sync. */
@@ -1243,7 +1237,7 @@ void KeyThread::recvStoreRbKey()
 
 void KeyAgent::getPutBroadcastKey( long long userId, const String &forIduri, long long id )
 {
-	command( KA_GET_PUT_BROADCAST_KEY );	
+	command( KA_GET_PUT_BROADCAST_KEY );
 
 	writeLongLong( userId );
 	writeData( forIduri );
@@ -1260,7 +1254,7 @@ void KeyThread::recvGetPutBroadcastKey()
 	readData( forIduri );
 	long long id = readLongLong();
 
-	DbQuery keyQuery( mysql, 
+	DbQuery keyQuery( mysql,
 		"SELECT broadcast_key, pub_key "
 		"FROM put_broadcast_key "
 		"WHERE id = %L",
@@ -1389,8 +1383,8 @@ void KeyThread::test( long long userId )
 {
 	Keys *keys = loadKeyPriv( userId, KEY_PRIV3, 0 );
 	PrivateKey key;
-	key.n = bnToBin( keys->rsa->n );
-	key.e = bnToBin( keys->rsa->e );
+	key.n = bnToBin( RSA_get0_n(keys->rsa) );
+	key.e = bnToBin( RSA_get0_e(keys->rsa) );
 
 	String pKey = consPublicKey( key );
 	PacketPublicKey epp( pKey );
@@ -1406,10 +1400,10 @@ void KeyThread::recvCheckPass()
 	readData( pass );
 	readData( token );
 
-	DbQuery login( mysql, 
+	DbQuery login( mysql,
 		"SELECT pass_salt, pass "
 		"FROM password "
-		"WHERE user_id = %L", 
+		"WHERE user_id = %L",
 		userId );
 
 	if ( login.rows() == 0 ) {
@@ -1476,7 +1470,7 @@ void KeyThread::recvBkDetachedSign()
 
 	Keys *privDecSign = parsePrivKey( privKey );
 
-	String encPacket = bkDetachedSign( privDecSign, bk, msg ); 
+	String encPacket = bkDetachedSign( privDecSign, bk, msg );
 	writeData( encPacket );
 }
 
@@ -1552,7 +1546,7 @@ void KeyThread::recvBkDetachedForeignSign()
 
 	Keys *privDecSign = loadKeyPriv( privDecSignId );
 
-	String encPacket = bkDetachedSign( privDecSign, bk, msg ); 
+	String encPacket = bkDetachedSign( privDecSign, bk, msg );
 	writeData( encPacket );
 }
 
@@ -1602,7 +1596,7 @@ void KeyAgent::generateFriendClaimKeys( long long friendClaimId )
 {
 	command( KA_GENERATE_FRIEND_CLAIM_KEYS );
 	writeLongLong( friendClaimId );
-	
+
 	/* result */
 	readData( pub1 );
 	readData( pub2 );
@@ -1620,14 +1614,14 @@ void KeyThread::recvGenerateFriendClaimKeys()
 
 	/* Extract the components to hex strings. */
 	PrivateKey key;
-	key.n = bnToBin( rsa->n );
-	key.e = bnToBin( rsa->e );
-	key.d = bnToBin( rsa->d );
-	key.p = bnToBin( rsa->p );
-	key.q = bnToBin( rsa->q );
-	key.dmp1 = bnToBin( rsa->dmp1 );
-	key.dmq1 = bnToBin( rsa->dmq1 );
-	key.iqmp = bnToBin( rsa->iqmp );
+	key.n = bnToBin( RSA_get0_n(rsa) );
+	key.e = bnToBin( RSA_get0_e(rsa) );
+	key.d = bnToBin( RSA_get0_d(rsa) );
+	key.p = bnToBin( RSA_get0_p(rsa) );
+	key.q = bnToBin( RSA_get0_q(rsa) );
+	key.dmp1 = bnToBin( RSA_get0_dmp1(rsa) );
+	key.dmq1 = bnToBin( RSA_get0_dmq1(rsa) );
+	key.iqmp = bnToBin( RSA_get0_iqmp(rsa) );
 
 	String priv1 = consPrivateKey( key );
 	String pub1 = consPublicKey( key );
@@ -1639,14 +1633,14 @@ void KeyThread::recvGenerateFriendClaimKeys()
 		throw RsaKeyGenError( ERR_get_error() );
 
 	/* Extract the components to hex strings. */
-	key.n = bnToBin( rsa->n );
-	key.e = bnToBin( rsa->e );
-	key.d = bnToBin( rsa->d );
-	key.p = bnToBin( rsa->p );
-	key.q = bnToBin( rsa->q );
-	key.dmp1 = bnToBin( rsa->dmp1 );
-	key.dmq1 = bnToBin( rsa->dmq1 );
-	key.iqmp = bnToBin( rsa->iqmp );
+	key.n = bnToBin( RSA_get0_n(rsa) );
+	key.e = bnToBin( RSA_get0_e(rsa) );
+	key.d = bnToBin( RSA_get0_d(rsa) );
+	key.p = bnToBin( RSA_get0_p(rsa) );
+	key.q = bnToBin( RSA_get0_q(rsa) );
+	key.dmp1 = bnToBin( RSA_get0_dmp1(rsa) );
+	key.dmq1 = bnToBin( RSA_get0_dmq1(rsa) );
+	key.iqmp = bnToBin( RSA_get0_iqmp(rsa) );
 
 	String priv2 = consPrivateKey( key );
 	String pub2 = consPublicKey( key );
@@ -1655,7 +1649,7 @@ void KeyThread::recvGenerateFriendClaimKeys()
 		"INSERT IGNORE INTO friend_claim "
 		"( id, direct_key_data, rb_key_data ) "
 		"VALUES ( %L, %d, %d ) ",
-		friendClaimId, 
+		friendClaimId,
 		priv1.binary(), priv1.length,
 		priv2.binary(), priv2.length );
 
@@ -1742,7 +1736,7 @@ void KeyThread::recvGetFriendClaimRbSigKey()
 
 	if ( fc.rows() == 0 )
 		throw MissingKeys();
-	
+
 	row = fc.fetchRow();
 	u_long *lengths = fc.fetchLengths();
 
@@ -1750,14 +1744,14 @@ void KeyThread::recvGetFriendClaimRbSigKey()
 
 	Keys *privDecSign = parsePrivKey( pk );
 	PrivateKey key;
-	key.n = bnToBin( privDecSign->rsa->n );
-	key.e = bnToBin( privDecSign->rsa->e );
-	key.d = bnToBin( privDecSign->rsa->d );
-	key.p = bnToBin( privDecSign->rsa->p );
-	key.q = bnToBin( privDecSign->rsa->q );
-	key.dmp1 = bnToBin( privDecSign->rsa->dmp1 );
-	key.dmq1 = bnToBin( privDecSign->rsa->dmq1 );
-	key.iqmp = bnToBin( privDecSign->rsa->iqmp );
+	key.n = bnToBin( RSA_get0_n(privDecSign->rsa) );
+	key.e = bnToBin( RSA_get0_e(privDecSign->rsa) );
+	key.d = bnToBin( RSA_get0_d(privDecSign->rsa) );
+	key.p = bnToBin( RSA_get0_p(privDecSign->rsa) );
+	key.q = bnToBin( RSA_get0_q(privDecSign->rsa) );
+	key.dmp1 = bnToBin( RSA_get0_dmp1(privDecSign->rsa) );
+	key.dmq1 = bnToBin( RSA_get0_dmq1(privDecSign->rsa) );
+	key.iqmp = bnToBin( RSA_get0_iqmp(privDecSign->rsa) );
 	String pubRbKey = consPublicKey( key );
 
 	writeData( pubRbKey );
@@ -1813,19 +1807,19 @@ void KeyThread::recvBkDetachedRepubForeignSign()
 
 	/* FIXME: Hack here! */
 	PrivateKey key;
-	key.n = bnToBin( privDecSign->rsa->n );
-	key.e = bnToBin( privDecSign->rsa->e );
-	key.d = bnToBin( privDecSign->rsa->d );
-	key.p = bnToBin( privDecSign->rsa->p );
-	key.q = bnToBin( privDecSign->rsa->q );
-	key.dmp1 = bnToBin( privDecSign->rsa->dmp1 );
-	key.dmq1 = bnToBin( privDecSign->rsa->dmq1 );
-	key.iqmp = bnToBin( privDecSign->rsa->iqmp );
+	key.n = bnToBin( RSA_get0_n(privDecSign->rsa) );
+	key.e = bnToBin( RSA_get0_e(privDecSign->rsa) );
+	key.d = bnToBin( RSA_get0_d(privDecSign->rsa) );
+	key.p = bnToBin( RSA_get0_p(privDecSign->rsa) );
+	key.q = bnToBin( RSA_get0_q(privDecSign->rsa) );
+	key.dmp1 = bnToBin( RSA_get0_dmp1(privDecSign->rsa) );
+	key.dmq1 = bnToBin( RSA_get0_dmq1(privDecSign->rsa) );
+	key.iqmp = bnToBin( RSA_get0_iqmp(privDecSign->rsa) );
 	String pubRbKey = consPublicKey( key );
 
 	String pubRbKeyHash = sha1( pubRbKey );
 
-	String detachedSig = bkDetachedSign( privDecSign, bk, msg ); 
+	String detachedSig = bkDetachedSign( privDecSign, bk, msg );
 	String fullPacket = consDetachedSigKey( pubRbKeyHash, detachedSig );
 	writeData( fullPacket );
 }

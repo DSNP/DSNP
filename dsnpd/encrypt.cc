@@ -34,8 +34,8 @@ Allocated signEncrypt( Keys *pubEncVer, Keys *privDecSign, const String *iduri, 
 {
 	/* Need to make a buffer containing both the session key and message so we
 	 * our signature is valid only using this encryption key. */
-	String nBin = bnToBin( pubEncVer->rsa->n );
-	String eBin = bnToBin( pubEncVer->rsa->e );
+	String nBin = bnToBin( RSA_get0_n(pubEncVer->rsa) );
+	String eBin = bnToBin( RSA_get0_e(pubEncVer->rsa) );
 	String signData = concatenate( 3, &nBin, &eBin, &msg );
 
 	/* Sign the message. */
@@ -44,7 +44,7 @@ Allocated signEncrypt( Keys *pubEncVer, Keys *privDecSign, const String *iduri, 
 
 	String sigBin( RSA_size(privDecSign->rsa) );
 	unsigned sigLen;
-	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH, 
+	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH,
 			sigBin.binary(), &sigLen, privDecSign->rsa );
 
 	if ( signRes != 1 )
@@ -53,10 +53,10 @@ Allocated signEncrypt( Keys *pubEncVer, Keys *privDecSign, const String *iduri, 
 	/* Generate a session key just for this message. */
 	unsigned char keyBin[SK_SIZE];
 	RAND_bytes( keyBin, SK_SIZE );
-	
+
 	/* Encrypt the session key. */
 	String protKey( RSA_size(pubEncVer->rsa) );
-	int protKeyLen = RSA_public_encrypt( SK_SIZE, keyBin, protKey.binary(), 
+	int protKeyLen = RSA_public_encrypt( SK_SIZE, keyBin, protKey.binary(),
 			pubEncVer->rsa, RSA_PKCS1_PADDING );
 
 	if ( protKeyLen < 0 )
@@ -65,10 +65,10 @@ Allocated signEncrypt( Keys *pubEncVer, Keys *privDecSign, const String *iduri, 
 	/*
 	 * Concatenate the signature and the message so we can encrypt it.
 	 */
-	
+
 	/* Make the concatenated plain text. FIXME: this is a bit of an abuse. The
 	 * sig does not apply to msg alone. */
-	String plainData = iduri == 0 ? 
+	String plainData = iduri == 0 ?
 			consSigned( sigBin, msg ) :
 			consSignedId( *iduri, sigBin, msg );
 
@@ -102,18 +102,18 @@ Allocated decryptVerify( Keys *pubEncVer, Keys *privDecSign, const String &msg )
 
 	PacketSigned epp2( dec );
 
-	String nBin = bnToBin( privDecSign->rsa->n );
-	String eBin = bnToBin( privDecSign->rsa->e );
+	String nBin = bnToBin( RSA_get0_n(privDecSign->rsa) );
+	String eBin = bnToBin( RSA_get0_e(privDecSign->rsa) );
 	String verifyData = concatenate( 3, &nBin, &eBin, &epp2.msg );
 
 	/* Verify the item. */
 	u_char decryptedSha1[SHA_DIGEST_LENGTH];
 	SHA1( verifyData.binary(), verifyData.length, decryptedSha1 );
-	int verifyres = RSA_verify( NID_sha1, decryptedSha1, SHA_DIGEST_LENGTH, 
+	int verifyres = RSA_verify( NID_sha1, decryptedSha1, SHA_DIGEST_LENGTH,
 			epp2.sig.binary(), epp2.sig.length, pubEncVer->rsa );
 	if ( verifyres != 1 )
 		throw RsaVerifyFailed( ERR_get_error() );
-	
+
 	return epp2.msg.relinquish();
 }
 
@@ -140,18 +140,18 @@ Allocated decryptVerify2( Keys *pubEncVer, Keys *privDecSign, const String &dec 
 {
 	PacketSignedId signedId( dec );
 
-	String nBin = bnToBin( privDecSign->rsa->n );
-	String eBin = bnToBin( privDecSign->rsa->e );
+	String nBin = bnToBin( RSA_get0_n(privDecSign->rsa) );
+	String eBin = bnToBin( RSA_get0_e(privDecSign->rsa) );
 	String verifyData = concatenate( 3, &nBin, &eBin, &signedId.msg );
 
 	/* Verify the item. */
 	u_char decryptedSha1[SHA_DIGEST_LENGTH];
 	SHA1( verifyData.binary(), verifyData.length, decryptedSha1 );
-	int verifyres = RSA_verify( NID_sha1, decryptedSha1, SHA_DIGEST_LENGTH, 
+	int verifyres = RSA_verify( NID_sha1, decryptedSha1, SHA_DIGEST_LENGTH,
 			signedId.sig.binary(), signedId.sig.length, pubEncVer->rsa );
 	if ( verifyres != 1 )
 		throw RsaVerifyFailed( ERR_get_error() );
-	
+
 	return signedId.msg.relinquish();
 }
 
@@ -169,7 +169,7 @@ Allocated bkEncrypt( const String &bk, const String &msg )
 
 	return consBkEncrypted( encrypted );
 }
-	
+
 Allocated bkDecrypt( const String &bk, const String &msg )
 {
 	PacketBkEncrypted epp1( msg );
@@ -201,12 +201,12 @@ Allocated bkSignEncrypt( Keys *privDecSign, const String &bk, const String &msg 
 
 	String sigBin( RSA_size(privDecSign->rsa) );
 	unsigned sigLen;
-	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH, 
+	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH,
 			sigBin.binary(), &sigLen, privDecSign->rsa );
 
 	if ( signRes != 1 )
 		throw RsaSignFailed( ERR_get_error() ) ;
-	
+
 	/* Make a single buffer containing the plain data. */
 	String plainData = consSigned( sigBin, msg );
 
@@ -218,7 +218,7 @@ Allocated bkSignEncrypt( Keys *privDecSign, const String &bk, const String &msg 
 
 	return consBkSignedEncrypted( encrypted );
 }
-	
+
 Allocated bkDecryptVerify( Keys *pubEncVer, const String &bk, const String &msg )
 {
 	PacketBkSignedEncrypted epp1( msg );
@@ -245,7 +245,7 @@ Allocated bkDecryptVerify( Keys *pubEncVer, const String &bk, const String &msg 
 			SHA_DIGEST_LENGTH, epp2.sig.binary(), epp2.sig.length, pubEncVer->rsa );
 	if ( verifyres != 1 )
 		throw RsaVerifyFailed( ERR_get_error() );
-	
+
 	return epp2.msg.relinquish();
 }
 
@@ -265,12 +265,12 @@ Allocated bkSign( Keys *privDecSign, const String &bk, const String &msg )
 
 	String sigBin( RSA_size(privDecSign->rsa) );
 	unsigned sigLen;
-	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH, 
+	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH,
 			sigBin.binary(), &sigLen, privDecSign->rsa );
 
 	if ( signRes != 1 )
 		throw RsaSignFailed( ERR_get_error() ) ;
-	
+
 	/* Make a single buffer containing the plain data. */
 	return consSigned( sigBin, msg );
 }
@@ -293,7 +293,7 @@ Allocated bkVerify( Keys *pubEncVer, const String &bk, const String &msg )
 			SHA_DIGEST_LENGTH, epp.sig.binary(), epp.sig.length, pubEncVer->rsa );
 	if ( verifyres != 1 )
 		throw RsaVerifyFailed( ERR_get_error() );
-	
+
 	return epp.msg.relinquish();
 }
 
@@ -312,12 +312,12 @@ Allocated bkDetachedSign( Keys *privDecSign, const String &bk, const String &msg
 
 	String sigBin( RSA_size(privDecSign->rsa) );
 	unsigned sigLen;
-	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH, 
+	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH,
 			sigBin.binary(), &sigLen, privDecSign->rsa );
 
 	if ( signRes != 1 )
 		throw RsaSignFailed( ERR_get_error() ) ;
-	
+
 	/* Make a single buffer containing the plain data. */
 	return consDetachedSig( sigBin );
 }
@@ -340,7 +340,7 @@ bool bkDetachedVerify( Keys *pubEncVer, const String &bk, const String &sig, con
 			SHA_DIGEST_LENGTH, epp.sig.binary(), epp.sig.length, pubEncVer->rsa );
 	if ( verifyres != 1 )
 		throw RsaVerifyFailed( ERR_get_error() );
-	
+
 	return true;
 }
 
@@ -382,12 +382,12 @@ Allocated sign( Keys *privSign, const String &msg )
 
 	String sigBin( RSA_size(privSign->rsa) );
 	unsigned sigLen;
-	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH, 
+	int signRes = RSA_sign( NID_sha1, msgSha1, SHA_DIGEST_LENGTH,
 			sigBin.binary(), &sigLen, privSign->rsa );
 
 	if ( signRes != 1 )
 		throw RsaSignFailed( ERR_get_error() );
-	
+
 	/* Result. */
 	return consSigned( sigBin, msg );
 }
@@ -399,7 +399,7 @@ Allocated verify( Keys *pubVer, const String &msg )
 	/* Verify the item. */
 	u_char msgSha1[SHA_DIGEST_LENGTH];
 	SHA1( epp.msg.binary(), epp.msg.length, msgSha1 );
-	int verifyres = RSA_verify( NID_sha1, msgSha1, SHA_DIGEST_LENGTH, 
+	int verifyres = RSA_verify( NID_sha1, msgSha1, SHA_DIGEST_LENGTH,
 			epp.sig.binary(), epp.sig.length, pubVer->rsa );
 	if ( verifyres != 1 )
 		throw RsaVerifyFailed( ERR_get_error() );
